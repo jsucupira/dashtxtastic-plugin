@@ -1,0 +1,16 @@
+{
+  "name": "dashtxtastic",
+  "description": "Publish markdown from your repo as branded, shareable Dashtxtastic dashboards.",
+  "owner": {
+    "name": "Wonderdev, LLC",
+    "url": "https://dashtxtastic.com"
+  },
+  "plugins": [
+    {
+      "name": "dashtxtastic",
+      "source": "./",
+      "description": "Publish markdown from your repo as a branded, shareable dashboard on Dashtxtastic.",
+      "version": "0.1.0"
+    }
+  ]
+}

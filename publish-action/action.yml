@@ -1,0 +1,67 @@
+name: Publish to Dashtxtastic
+description: Publish a markdown file from this repository as a Dashtxtastic dashboard and keep its share link alive.
+author: Wonderdev, LLC
+branding:
+  icon: layout
+  color: orange
+
+inputs:
+  api-key:
+    description: Dashtxtastic Developer API key. Store it as a repository secret, never inline.
+    required: true
+  file:
+    description: Path to the markdown file to publish, relative to the repository root.
+    required: true
+  project-name:
+    description: Dashboard name. The action reuses an existing project with exactly this name, or creates one.
+    required: false
+    default: ${{ github.event.repository.name }}
+  render-mode:
+    description: Render mode id (prose, tile_dashboard, list_dashboard, infographic_before_after, infographic_stages, project_hub).
+    required: false
+    default: prose
+  target-path:
+    description: File name inside the project. Lowercase ASCII ending in .md.
+    required: false
+    default: main.md
+  share:
+    description: Set to "false" to skip creating or extending the public share link.
+    required: false
+    default: "true"
+  share-slug:
+    description: Slug prefix for a newly created share link. Ignored when a link already exists.
+    required: false
+    default: ""
+  share-days:
+    description: Share link lifetime in days (1 to 365), renewed on every run so the URL never lapses.
+    required: false
+    default: "90"
+  base-url:
+    description: Dashtxtastic base URL.
+    required: false
+    default: https://dashtxtastic.com
+
+outputs:
+  project-id:
+    description: The Dashtxtastic project id.
+    value: ${{ steps.publish.outputs.project-id }}
+  share-url:
+    description: The public share URL, empty when share is "false".
+    value: ${{ steps.publish.outputs.share-url }}
+
+runs:
+  using: composite
+  steps:
+    - id: publish
+      shell: bash
+      env:
+        DTX_API_KEY: ${{ inputs.api-key }}
+        DTX_FILE: ${{ inputs.file }}
+        DTX_PROJECT_NAME: ${{ inputs.project-name }}
+        DTX_RENDER_MODE: ${{ inputs.render-mode }}
+        DTX_TARGET_PATH: ${{ inputs.target-path }}
+        DTX_SHARE: ${{ inputs.share }}
+        DTX_SHARE_SLUG: ${{ inputs.share-slug }}
+        DTX_SHARE_DAYS: ${{ inputs.share-days }}
+        DTX_BASE_URL: ${{ inputs.base-url }}
+      run: "${GITHUB_ACTION_PATH}/publish.sh"

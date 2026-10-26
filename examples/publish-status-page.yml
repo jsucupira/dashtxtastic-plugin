@@ -1,0 +1,28 @@
+# Copy to .github/workflows/publish-status-page.yml in your repository.
+# Add a repository secret named DASHTXTASTIC_API_KEY (mint one at
+# https://dashtxtastic.com/settings/developer).
+name: Publish status page
+
+on:
+  push:
+    branches: [main]
+    paths: [STATUS.md]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: dtx
+        uses: jsucupira/dashtxtastic-plugin/publish-action@v0.1.0
+        with:
+          api-key: ${{ secrets.DASHTXTASTIC_API_KEY }}
+          file: STATUS.md
+          render-mode: tile_dashboard
+
+      - run: echo "Status page is live at ${{ steps.dtx.outputs.share-url }}"
