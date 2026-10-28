@@ -84,7 +84,7 @@ Each mode expects a specific markdown structure. The plugin reads the live spec 
 
 ## Development
 
-`claude plugin validate .` checks the manifest. The [smoke test](.github/workflows/smoke.yml) runs on every push, every tag, and nightly against production: it publishes and updates a test dashboard through both the GitHub Action and a headless Claude Code session, then checks the live page. It needs two repository secrets, `DTX_API_KEY_FREE` (a key for a Free-plan test account) and `ANTHROPIC_API_KEY`.
+`claude plugin validate .` checks the manifest. The [smoke test](.github/workflows/smoke.yml) runs on every push, every tag, and nightly against production: it publishes and updates a test dashboard through both the GitHub Action and a headless Claude Code session, then checks the live page. It needs two repository secrets, `DTX_API_KEY_FREE` (a key for a Free-plan test account) and `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`).
 
 ## License
 

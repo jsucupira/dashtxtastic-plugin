@@ -2,7 +2,8 @@
 # test account so the five-project cap and the share badge are exercised.
 # Required repository secrets:
 #   DTX_API_KEY_FREE   API key for a dedicated Free-plan test account
-#   ANTHROPIC_API_KEY  used by the headless Claude Code run
+#   CLAUDE_CODE_OAUTH_TOKEN  from `claude setup-token`; the headless Claude Code
+#                            run uses the owner's Claude plan, not API billing
 name: Smoke test
 
 on:
@@ -89,10 +90,10 @@ jobs:
       - name: Check secrets
         env:
           DTX_API_KEY_FREE: ${{ secrets.DTX_API_KEY_FREE }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
           [[ -n "$DTX_API_KEY_FREE" ]] || { echo "::error::DTX_API_KEY_FREE secret is not set"; exit 1; }
-          [[ -n "$ANTHROPIC_API_KEY" ]] || { echo "::error::ANTHROPIC_API_KEY secret is not set"; exit 1; }
+          [[ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]] || { echo "::error::CLAUDE_CODE_OAUTH_TOKEN secret is not set"; exit 1; }
 
       - uses: actions/setup-node@v4
         with:
@@ -114,7 +115,7 @@ jobs:
         working-directory: ${{ env.SITE }}
         env:
           DTX_API_KEY: ${{ secrets.DTX_API_KEY_FREE }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
           # shellcheck disable=SC2086
           claude -p "/dashtxtastic:dashtxtastic Publish STATUS.md as a dashboard named 'CI smoke plugin' in the tile_dashboard mode (confirmed; do not wait). If a project with exactly that name already exists, reuse it. Make sure it has a share link (7 days if you create one) and give me the URL." \
@@ -129,7 +130,7 @@ jobs:
         working-directory: ${{ env.SITE }}
         env:
           DTX_API_KEY: ${{ secrets.DTX_API_KEY_FREE }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
           sed -i "s/${MARKER}-first/${MARKER}-update/" STATUS.md
           # shellcheck disable=SC2086
