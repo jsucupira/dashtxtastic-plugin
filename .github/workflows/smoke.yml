@@ -1,0 +1,140 @@
+# End-to-end smoke test against production Dashtxtastic, run as a Free-plan
+# test account so the five-project cap and the share badge are exercised.
+# Required repository secrets:
+#   DTX_API_KEY_FREE   API key for a dedicated Free-plan test account
+#   ANTHROPIC_API_KEY  used by the headless Claude Code run
+name: Smoke test
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke
+  cancel-in-progress: false
+
+env:
+  MARKER: ci-${{ github.run_id }}-${{ github.run_attempt }}
+
+jobs:
+  action:
+    name: GitHub Action publishes and keeps its URL
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secrets
+        env:
+          DTX_API_KEY_FREE: ${{ secrets.DTX_API_KEY_FREE }}
+        run: '[[ -n "$DTX_API_KEY_FREE" ]] || { echo "::error::DTX_API_KEY_FREE secret is not set"; exit 1; }'
+
+      - name: Write fixture (first publish)
+        run: |
+          cp tests/smoke/STATUS.md smoke-status.md
+          echo "- Marker ${MARKER}-first" >> smoke-status.md
+
+      - id: first
+        uses: ./publish-action
+        with:
+          api-key: ${{ secrets.DTX_API_KEY_FREE }}
+          file: smoke-status.md
+          project-name: CI smoke action
+          render-mode: tile_dashboard
+          share-days: "7"
+
+      - name: Verify first publish
+        run: tests/smoke/verify.sh "${{ steps.first.outputs.share-url }}" "${MARKER}-first" expect-badge
+
+      - name: Write fixture (update)
+        run: sed -i "s/${MARKER}-first/${MARKER}-update/" smoke-status.md
+
+      - id: update
+        uses: ./publish-action
+        with:
+          api-key: ${{ secrets.DTX_API_KEY_FREE }}
+          file: smoke-status.md
+          project-name: CI smoke action
+          render-mode: tile_dashboard
+          share-days: "7"
+
+      - name: Verify update kept the project and URL
+        env:
+          FIRST_ID: ${{ steps.first.outputs.project-id }}
+          FIRST_URL: ${{ steps.first.outputs.share-url }}
+          UPDATE_ID: ${{ steps.update.outputs.project-id }}
+          UPDATE_URL: ${{ steps.update.outputs.share-url }}
+        run: |
+          [[ "$FIRST_ID" == "$UPDATE_ID" ]] || { echo "::error::Update created a new project"; exit 1; }
+          [[ "$FIRST_URL" == "$UPDATE_URL" ]] || { echo "::error::Update changed the share URL"; exit 1; }
+          tests/smoke/verify.sh "$UPDATE_URL" "${MARKER}-update" expect-badge
+
+  plugin:
+    name: Claude Code plugin publishes and updates
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SITE: ${{ github.workspace }}/../smoke-site
+      CLAUDE_FLAGS: --plugin-dir ${{ github.workspace }} --model claude-sonnet-5-5 --max-turns 40 --permission-mode acceptEdits --output-format text
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secrets
+        env:
+          DTX_API_KEY_FREE: ${{ secrets.DTX_API_KEY_FREE }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          [[ -n "$DTX_API_KEY_FREE" ]] || { echo "::error::DTX_API_KEY_FREE secret is not set"; exit 1; }
+          [[ -n "$ANTHROPIC_API_KEY" ]] || { echo "::error::ANTHROPIC_API_KEY secret is not set"; exit 1; }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Claude Code (latest, so CLI changes surface here)
+        run: npm install -g @anthropic-ai/claude-code && claude --version
+
+      - name: Validate plugin
+        run: claude plugin validate .
+
+      - name: Prepare a fresh repository
+        run: |
+          mkdir -p "$SITE" && cd "$SITE" && git init -q
+          cp "$GITHUB_WORKSPACE/tests/smoke/STATUS.md" STATUS.md
+          echo "- Marker ${MARKER}-first" >> STATUS.md
+
+      - name: First publish (adopts the existing project by name)
+        working-directory: ${{ env.SITE }}
+        env:
+          DTX_API_KEY: ${{ secrets.DTX_API_KEY_FREE }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          # shellcheck disable=SC2086
+          claude -p "/dashtxtastic:dashtxtastic Publish STATUS.md as a dashboard named 'CI smoke plugin' in the tile_dashboard mode (confirmed; do not wait). If a project with exactly that name already exists, reuse it. Make sure it has a share link (7 days if you create one) and give me the URL." \
+            $CLAUDE_FLAGS --allowedTools "Bash(curl *)" "Bash(printenv *)" Read Write Edit < /dev/null
+          test -f .dashtxtastic.json || { echo "::error::Plugin did not write .dashtxtastic.json"; exit 1; }
+          jq -e '.projects["STATUS.md"].id and .projects["STATUS.md"].shareUrl' .dashtxtastic.json > /dev/null \
+            || { echo "::error::Registry entry is missing id or shareUrl"; cat .dashtxtastic.json; exit 1; }
+          "$GITHUB_WORKSPACE/tests/smoke/verify.sh" "$(jq -r '.projects["STATUS.md"].shareUrl' .dashtxtastic.json)" "${MARKER}-first" expect-badge
+          jq -r '.projects["STATUS.md"] | .id + " " + .shareUrl' .dashtxtastic.json > ../first.txt
+
+      - name: Update reuses the project and URL
+        working-directory: ${{ env.SITE }}
+        env:
+          DTX_API_KEY: ${{ secrets.DTX_API_KEY_FREE }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          sed -i "s/${MARKER}-first/${MARKER}-update/" STATUS.md
+          # shellcheck disable=SC2086
+          claude -p "/dashtxtastic:dashtxtastic I updated STATUS.md, update the dashboard." \
+            $CLAUDE_FLAGS --allowedTools "Bash(curl *)" "Bash(printenv *)" Read Write Edit < /dev/null
+          after="$(jq -r '.projects["STATUS.md"] | .id + " " + .shareUrl' .dashtxtastic.json)"
+          [[ "$after" == "$(cat ../first.txt)" ]] || { echo "::error::Update changed the project or URL: $(cat ../first.txt) -> ${after}"; exit 1; }
+          "$GITHUB_WORKSPACE/tests/smoke/verify.sh" "${after#* }" "${MARKER}-update" expect-badge

@@ -1,6 +1,6 @@
 {
   "name": "dashtxtastic",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Publish markdown from your repo as a branded, shareable dashboard on Dashtxtastic. Picks a render mode, authors the markdown to spec, uploads it, and returns a share link you control.",
   "author": {
     "name": "Wonderdev, LLC",

@@ -15,7 +15,9 @@ Publish a one-page dashboard by driving the Dashtxtastic Developer API. You auth
 - "Project hub / status hub across these tracks"
 - "Share this HTML page with someone outside the team"
 
-For long narrative docs (many headings of prose), suggest the `prose` mode or a plain markdown viewer instead of a visual mode.
+## When not to activate
+
+For long narrative docs (four or more headings of mostly prose, such as meeting notes or retros), a plain markdown viewer usually fits better; offer the `prose` mode only if the user still wants a share link. The visual modes pay off when the content has four to ten distinct zones: cards, comparison panels, status pills, phase columns.
 
 ## Prerequisites
 
@@ -38,18 +40,24 @@ Every plan can use the API. A `402 project_cap_reached` response means a Free ac
 
 ## Project registry
 
-Keep a `.dashtxtastic.json` file at the repository root so "update the dashboard" reuses the same project and share link across sessions instead of creating duplicates. It holds ids and names only, never keys, so it is safe to commit.
+The registry maps each source file to its Dashtxtastic project, so "update the dashboard" reuses the same project and share link across sessions instead of creating duplicates. It holds ids and names only, never keys.
+
+**Where it lives.** Run `printenv DTX_REGISTRY` first.
+
+- If it prints a path, that file is the registry, and keys are **absolute** source paths. Use this when the user publishes from many repos or does not want a file in the repo. Create the file as `{"projects": {}}` if it does not exist.
+- Otherwise the registry is `.dashtxtastic.json` at the repository root, and keys are paths **relative to the repo root**. It is safe to commit.
 
 ```json
 {
   "projects": {
-    "<source path relative to repo root>": {
+    "<source path: absolute with DTX_REGISTRY, otherwise relative to repo root>": {
       "id": "<project guid>",
       "name": "<dashboard name>",
       "renderMode": "<mode id, or null for html projects>",
       "projectType": "markdown | html",
       "sourceFile": "<uploaded file name, e.g. main.md>",
-      "shareUrl": "<https://dashtxtastic.com/s/...>"
+      "shareUrl": "<https://dashtxtastic.com/s/...>",
+      "lastPublishedUtc": "<ISO 8601 time of the last successful upload>"
     }
   }
 }
@@ -59,8 +67,8 @@ Rules:
 
 1. Before creating a project, look up the source path. If it is there, reuse its `id` and `PUT` the file again.
 2. On a registry miss when the user clearly means an existing dashboard, search first with `GET /api/v1/projects?q=<name>` (same curl form as below, URL-encoding the name) and adopt an exact name match. Never silently create a second project for the same source.
-3. Set each new project's `description` to `source: <relative path>` so the registry can be rebuilt from the API if the file is lost.
-4. Update the entry after every successful create, upload, or share-link call.
+3. Set each new project's `description` to `source: <path>`, using the same path form as the registry key, so the registry can be rebuilt from the API if the file is lost.
+4. Update the entry after every successful create, upload, or share-link call. Keep any fields you do not recognize (for example `notes`); the user may have added them.
 
 ## Workflow
 
@@ -120,7 +128,9 @@ curl -sS --variable %DTX_API_KEY --variable %DTX_BASE_URL=https://dashtxtastic.c
   --expand-url "{{DTX_BASE_URL}}/api/v1/projects/<id>/files/main.md"
 ```
 
-Path rules: lowercase ASCII, ends in `.md`, no `..`, no leading slash, under 1 MiB. Add `?renderMode=<mode>` to give a sibling file a different mode from the project default. Add an `Idempotency-Key: <uuid>` header when retrying after a timeout.
+Path rules: lowercase ASCII, ends in `.md`, no `..`, no leading slash, under 1 MiB. Add `?renderMode=<mode>` to give a sibling file a different mode from the project default, for example `prose` pages under a `project_hub` main. `PATCH /api/v1/projects/<id>` with `{"renderMode":"<mode>"}` changes only the default for future files; existing files keep their own mode. Add an `Idempotency-Key: <uuid>` header when retrying after a timeout.
+
+The render is inline: the response already carries the new version, so do not poll afterwards.
 
 ### 6. Share
 
@@ -152,6 +162,13 @@ For anything non-public, set an access code and send the code separately from th
 
 Tell the user the mode and why, the share URL, and two or three concrete tweaks they could ask for next.
 
+If there is no share link, give the owner URL, which only works while the user is signed in:
+
+- Main file: `https://dashtxtastic.com/view/<id>` (no file name on the end).
+- Any other file: `https://dashtxtastic.com/p/<id>/<name>.html` (note `/p/` and `.html`, not the `.md` upload path).
+
+Do not open URLs in a browser unless the user asks.
+
 ## Hosting a finished HTML page
 
 Use this when the deliverable already exists as an `.html` file. Nothing is rendered; the file is served as uploaded, plus a `<base>` tag so sibling links resolve.
@@ -170,6 +187,8 @@ curl -sS --variable %DTX_API_KEY --variable %DTX_BASE_URL=https://dashtxtastic.c
   --expand-url "{{DTX_BASE_URL}}/api/v1/projects/<id>/files/page.html"
 ```
 
+For a multi-page site, `PUT` each `.html` file, then `POST /api/v1/projects/<id>/files/set-main` with `{"path":"<landing page>.html"}`. Relative links between the pages resolve under the share link. Record the registry entry with `"projectType": "html"` and `"renderMode": null`.
+
 Then share exactly as in step 6. Do not edit someone else's HTML before uploading. Html projects take `.html` files only and reject `?renderMode=` with `409`.
 
 ## Errors
@@ -182,9 +201,18 @@ Then share exactly as in step 6. Do not edit someone else's HTML before uploadin
 | 412 | Tried to delete the main or last file | Promote another file with `POST /files/set-main` first |
 | 413 | File over 1 MiB | Split the content across files |
 | 422 | Markdown does not match the mode's structure | Re-read the `authoringPrompt` and fix the structure |
-| 429 | Rate limit | Wait a minute; do not retry in a tight loop |
+| 429 | Rate limit (60 reads and 30 writes per minute per key) | Wait a minute; do not retry in a tight loop |
 
 Errors use `{ "status": "error", "error": "<code>", "message": "..." }`. Quote `message` when reporting a failure.
+
+## Anti-patterns
+
+- Writing HTML, inline CSS, or SVG for a markdown project. The renderer owns the layout; markdown is the only input. A page that already exists as HTML goes in an html project instead.
+- Creating a project before the user has confirmed the render mode.
+- Uploading images or other non-page files. Markdown projects take `.md`, html projects take `.html`.
+- Inventing metrics, owners, or dates that are not in the user's sources.
+- Reading Dashtxtastic's source code or templates to decide markdown structure. `GET /api/v1/render-modes` is the only source of truth.
+- Sending an access code in the same message as its share link when the content is sensitive.
 
 ## Reference
 

@@ -36,12 +36,18 @@ Try:
 
 The plugin keeps a `.dashtxtastic.json` file at your repo root that maps source files to their dashboards, so updates reuse the same project and link. It holds ids and URLs only, so it is safe to commit.
 
+Prefer one registry for all your repos, or no file in the repo at all? Point `DTX_REGISTRY` at a JSON file and the plugin uses it instead, keyed by absolute source paths:
+
+```bash
+export DTX_REGISTRY="$HOME/.config/dashtxtastic/registry.json"
+```
+
 ## GitHub Action
 
 Copy [`examples/publish-status-page.yml`](examples/publish-status-page.yml) into `.github/workflows/`, add a `DASHTXTASTIC_API_KEY` repository secret, and push.
 
 ```yaml
-- uses: jsucupira/dashtxtastic-plugin/publish-action@v0.1.0
+- uses: jsucupira/dashtxtastic-plugin/publish-action@v0.2.0
   with:
     api-key: ${{ secrets.DASHTXTASTIC_API_KEY }}
     file: STATUS.md
@@ -75,6 +81,10 @@ Each run renews the existing link rather than minting a new one, so the URL you 
 | Tracks with owners and status | `project_hub` |
 
 Each mode expects a specific markdown structure. The plugin reads the live spec from the API before writing; for the Action, see the [docs](https://dashtxtastic.com/docs).
+
+## Development
+
+`claude plugin validate .` checks the manifest. The [smoke test](.github/workflows/smoke.yml) runs on every push, every tag, and nightly against production: it publishes and updates a test dashboard through both the GitHub Action and a headless Claude Code session, then checks the live page. It needs two repository secrets, `DTX_API_KEY_FREE` (a key for a Free-plan test account) and `ANTHROPIC_API_KEY`.
 
 ## License
 
