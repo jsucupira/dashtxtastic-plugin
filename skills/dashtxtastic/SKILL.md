@@ -26,7 +26,13 @@ export DTX_API_KEY="dtx_..."
 export DTX_BASE_URL="https://dashtxtastic.com"
 ```
 
-If `DTX_API_KEY` is not set, stop and ask the user to export it in their shell profile. Never hard-code the key in a command, a file, a commit, or a message.
+Never hard-code the key in a command, a file, a commit, or a message, and never print it.
+
+### How to call the API
+
+Every command below lets curl (8.3 or later) read `DTX_API_KEY` and `DTX_BASE_URL` from the environment itself, through `--variable` and the `--expand-*` options. Keep it that way: never write `$DTX_API_KEY`, `${DTX_BASE_URL}`, or any other `$` variable into a command. Claude Code cannot check a command that expands a shell variable, so it blocks or re-prompts on every call; without the `$`, the user can approve curl once.
+
+If curl stops with `variable expansion failure` (exit code 2), `DTX_API_KEY` is not set. Stop and ask the user to export it in their shell profile and restart the session. If curl rejects `--variable` as an unknown option, it is older than 8.3; ask the user to upgrade it.
 
 Every plan can use the API. A `402 project_cap_reached` response means a Free account already holds five projects; quote the response `message` to the user.
 
@@ -52,7 +58,7 @@ Keep a `.dashtxtastic.json` file at the repository root so "update the dashboard
 Rules:
 
 1. Before creating a project, look up the source path. If it is there, reuse its `id` and `PUT` the file again.
-2. On a registry miss when the user clearly means an existing dashboard, search first with `GET /api/v1/projects?q=<name>` and adopt an exact name match. Never silently create a second project for the same source.
+2. On a registry miss when the user clearly means an existing dashboard, search first with `GET /api/v1/projects?q=<name>` (same curl form as below, URL-encoding the name) and adopt an exact name match. Never silently create a second project for the same source.
 3. Set each new project's `description` to `source: <relative path>` so the registry can be rebuilt from the API if the file is lost.
 4. Update the entry after every successful create, upload, or share-link call.
 
@@ -61,8 +67,9 @@ Rules:
 ### 1. Read the live render-mode catalog
 
 ```bash
-curl -sS -H "Authorization: Bearer $DTX_API_KEY" \
-  "${DTX_BASE_URL:-https://dashtxtastic.com}/api/v1/render-modes"
+curl -sS --variable %DTX_API_KEY --variable %DTX_BASE_URL=https://dashtxtastic.com \
+  --expand-header "Authorization: Bearer {{DTX_API_KEY}}" \
+  --expand-url "{{DTX_BASE_URL}}/api/v1/render-modes"
 ```
 
 Read `data.modes[].authoringPrompt` for the mode you intend to use, top to bottom, before writing markdown. The live prompt overrides anything in this file.
@@ -85,9 +92,11 @@ Propose the mode in one line with the reason, and wait for the user to confirm.
 ### 3. Create the project (only on a registry miss)
 
 ```bash
-curl -sS -X POST -H "Authorization: Bearer $DTX_API_KEY" -H "Content-Type: application/json" \
+curl -sS --variable %DTX_API_KEY --variable %DTX_BASE_URL=https://dashtxtastic.com \
+  --expand-header "Authorization: Bearer {{DTX_API_KEY}}" \
+  -X POST -H "Content-Type: application/json" \
   -d '{"name":"<short name>","renderMode":"<mode id>","description":"source: <relative path>"}' \
-  "${DTX_BASE_URL:-https://dashtxtastic.com}/api/v1/projects"
+  --expand-url "{{DTX_BASE_URL}}/api/v1/projects"
 ```
 
 Capture `data.id` from the `201` response and write the registry entry.
@@ -104,27 +113,35 @@ Write the file to match the chosen mode's `authoringPrompt` exactly. The rendere
 ### 5. Upload (renders and publishes in one call)
 
 ```bash
-curl -sS -X PUT -H "Authorization: Bearer $DTX_API_KEY" -H "Content-Type: text/markdown" \
+curl -sS --variable %DTX_API_KEY --variable %DTX_BASE_URL=https://dashtxtastic.com \
+  --expand-header "Authorization: Bearer {{DTX_API_KEY}}" \
+  -X PUT -H "Content-Type: text/markdown" \
   --data-binary @<file>.md \
-  "${DTX_BASE_URL:-https://dashtxtastic.com}/api/v1/projects/<id>/files/main.md"
+  --expand-url "{{DTX_BASE_URL}}/api/v1/projects/<id>/files/main.md"
 ```
 
 Path rules: lowercase ASCII, ends in `.md`, no `..`, no leading slash, under 1 MiB. Add `?renderMode=<mode>` to give a sibling file a different mode from the project default. Add an `Idempotency-Key: <uuid>` header when retrying after a timeout.
 
 ### 6. Share
 
-Owner routes (`/view/<id>`) need the user's login. For anyone else, mint or reuse the public link:
+Owner routes (`/view/<id>`) need the user's login. For anyone else, mint or reuse the public link.
+
+When updating a project that already has a `shareUrl` in the registry, the upload is enough: the link serves the new version immediately. Do not extend it unless the user asks or it has expired, and when you do, use the expiry the user asked for, not a default.
 
 ```bash
 # Keep an existing URL alive (also revives an expired link). 404 means there is no link yet.
-curl -sS -X POST -H "Authorization: Bearer $DTX_API_KEY" -H "Content-Type: application/json" \
+curl -sS --variable %DTX_API_KEY --variable %DTX_BASE_URL=https://dashtxtastic.com \
+  --expand-header "Authorization: Bearer {{DTX_API_KEY}}" \
+  -X POST -H "Content-Type: application/json" \
   -d '{"expiresInDays":90}' \
-  "${DTX_BASE_URL:-https://dashtxtastic.com}/api/v1/projects/<id>/share-links/extend"
+  --expand-url "{{DTX_BASE_URL}}/api/v1/projects/<id>/share-links/extend"
 
 # Create one when extend returned 404.
-curl -sS -X POST -H "Authorization: Bearer $DTX_API_KEY" -H "Content-Type: application/json" \
+curl -sS --variable %DTX_API_KEY --variable %DTX_BASE_URL=https://dashtxtastic.com \
+  --expand-header "Authorization: Bearer {{DTX_API_KEY}}" \
+  -X POST -H "Content-Type: application/json" \
   -d '{"slugBase":"q3-roadmap","expiresInDays":90}' \
-  "${DTX_BASE_URL:-https://dashtxtastic.com}/api/v1/projects/<id>/share-links"
+  --expand-url "{{DTX_BASE_URL}}/api/v1/projects/<id>/share-links"
 ```
 
 Optional body fields on create: `filePath` scopes the link to one file, `accessCode` gates it behind a passcode (`""` clears it). Share `data.url`. Prefer extend over re-creating: create on a lapsed link mints a new random suffix and breaks the URL people already have.
@@ -140,13 +157,17 @@ Tell the user the mode and why, the share URL, and two or three concrete tweaks 
 Use this when the deliverable already exists as an `.html` file. Nothing is rendered; the file is served as uploaded, plus a `<base>` tag so sibling links resolve.
 
 ```bash
-curl -sS -X POST -H "Authorization: Bearer $DTX_API_KEY" -H "Content-Type: application/json" \
+curl -sS --variable %DTX_API_KEY --variable %DTX_BASE_URL=https://dashtxtastic.com \
+  --expand-header "Authorization: Bearer {{DTX_API_KEY}}" \
+  -X POST -H "Content-Type: application/json" \
   -d '{"name":"<short name>","projectType":"html","description":"source: <relative path>"}' \
-  "${DTX_BASE_URL:-https://dashtxtastic.com}/api/v1/projects"
+  --expand-url "{{DTX_BASE_URL}}/api/v1/projects"
 
-curl -sS -X PUT -H "Authorization: Bearer $DTX_API_KEY" -H "Content-Type: text/html" \
+curl -sS --variable %DTX_API_KEY --variable %DTX_BASE_URL=https://dashtxtastic.com \
+  --expand-header "Authorization: Bearer {{DTX_API_KEY}}" \
+  -X PUT -H "Content-Type: text/html" \
   --data-binary @page.html \
-  "${DTX_BASE_URL:-https://dashtxtastic.com}/api/v1/projects/<id>/files/page.html"
+  --expand-url "{{DTX_BASE_URL}}/api/v1/projects/<id>/files/page.html"
 ```
 
 Then share exactly as in step 6. Do not edit someone else's HTML before uploading. Html projects take `.html` files only and reject `?renderMode=` with `409`.
